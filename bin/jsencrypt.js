@@ -1372,7 +1372,7 @@ function byte2Hex(b) {
 // PKCS#1 (type 2, random) pad input string s to n bytes, and return a bigint
 function pkcs1pad2(s,n) {
   if(n < s.length + 11) { // TODO: fix for utf-8
-    console.error("Message too long for RSA");
+    alert("Message too long for RSA");
     return null;
   }
   var ba = new Array();
@@ -1405,6 +1405,57 @@ function pkcs1pad2(s,n) {
   return new BigInteger(ba);
 }
 
+// PKCS#1 (OAEP) mask generation function
+function oaep_mgf1_arr(seed, len) {
+  var mask = '', i = 0;
+
+  while (mask.length < len) {
+    mask += rstr_sha1(String.fromCharCode.apply(String, seed.concat([
+            (i & 0xff000000) >> 24,
+            (i & 0x00ff0000) >> 16,
+            (i & 0x0000ff00) >> 8,
+            i & 0x000000ff])));
+    i += 1;
+  }
+
+  return mask;
+}
+
+var SHA1_SIZE = 20;
+
+// PKCS#1 (OAEP) pad input string s to n bytes, and return a bigint
+function oaep_pad(s, n) {
+  if (s.length + 2 * SHA1_SIZE + 2 > n) {
+    alert("Message too long for RSA");
+  }
+
+  var PS = '', i;
+
+  for (i = 0; i < n - s.length - 2 * SHA1_SIZE - 2; i += 1) {
+    PS += '\x00';
+  }
+
+  var DB = rstr_sha1('') + PS + '\x01' + s,
+      seed = new Array(SHA1_SIZE);
+  new SecureRandom().nextBytes(seed);
+
+  var dbMask = oaep_mgf1_arr(seed, DB.length),
+      maskedDB = [];
+
+  for (i = 0; i < DB.length; i += 1) {
+    maskedDB[i] = DB.charCodeAt(i) ^ dbMask.charCodeAt(i);
+  }
+
+  var seedMask = oaep_mgf1_arr(maskedDB, seed.length),
+      maskedSeed = [0];
+
+  for (i = 0; i < seed.length; i += 1) {
+    maskedSeed[i + 1] = seed[i] ^ seedMask.charCodeAt(i);
+  }
+
+  return new BigInteger(maskedSeed.concat(maskedDB));
+}
+
 // "empty" RSA key constructor
 function RSAKey() {
   this.n = null;
@@ -1424,7 +1475,7 @@ function RSASetPublic(N,E) {
     this.e = parseInt(E,16);
   }
   else
-    console.error("Invalid RSA public key");
+    alert("Invalid RSA public key");
 }
 
 // Perform raw public operation on "x": return x^e (mod n)
@@ -1433,8 +1484,11 @@ function RSADoPublic(x) {
 }
 
 // Return the PKCS#1 RSA encryption of "text" as an even-length hex string
-function RSAEncrypt(text) {
-  var m = pkcs1pad2(text,(this.n.bitLength()+7)>>3);
+function RSAEncrypt(text, paddingFunction) {
+  if (typeof paddingFunction === typeof undefined) {
+    paddingFunction = pkcs1pad2;
+  }
+  var m = paddingFunction(text,(this.n.bitLength()+7)>>3);
   if(m == null) return null;
   var c = this.doPublic(m);
   if(c == null) return null;
@@ -1455,6 +1509,7 @@ RSAKey.prototype.doPublic = RSADoPublic;
 RSAKey.prototype.setPublic = RSASetPublic;
 RSAKey.prototype.encrypt = RSAEncrypt;
 //RSAKey.prototype.encrypt_b64 = RSAEncryptB64;
+
 
 // Depends on rsa.js and jsbn2.js
 
@@ -1488,6 +1543,81 @@ function pkcs1unpad2(d,n) {
   return ret;
 }
 
+// PKCS#1 (OAEP) mask generation function
+function oaep_mgf1_str(seed, len) {
+  var mask = '', i = 0;
+
+  while (mask.length < len) {
+    mask += rstr_sha1(seed + String.fromCharCode.apply(String, [
+            (i & 0xff000000) >> 24,
+            (i & 0x00ff0000) >> 16,
+            (i & 0x0000ff00) >> 8,
+            i & 0x000000ff]));
+    i += 1;
+  }
+
+  return mask;
+}
+
+var SHA1_SIZE = 20;
+
+// Undo PKCS#1 (OAEP) padding and, if valid, return the plaintext
+function oaep_unpad(d, n) {
+  d = d.toByteArray();
+
+  var i;
+
+  for (i = 0; i < d.length; i += 1) {
+    d[i] &= 0xff;
+  }
+
+  while (d.length < n) {
+    d.unshift(0);
+  }
+
+  d = String.fromCharCode.apply(String, d);
+
+  if (d.length < 2 * SHA1_SIZE + 2) {
+    alert("Cipher too short");
+  }
+
+    var maskedSeed = d.substr(1, SHA1_SIZE),
+        maskedDB = d.substr(SHA1_SIZE + 1),
+
+        seedMask = oaep_mgf1_str(maskedDB, SHA1_SIZE),
+        seed = [],
+        i;
+
+    for (i = 0; i < maskedSeed.length; i += 1) {
+      seed[i] = maskedSeed.charCodeAt(i) ^ seedMask.charCodeAt(i);
+    }
+
+    var dbMask = oaep_mgf1_str(String.fromCharCode.apply(String, seed), d.length - SHA1_SIZE),
+        DB = [];
+
+    for (i = 0; i < maskedDB.length; i += 1) {
+      DB[i] = maskedDB.charCodeAt(i) ^ dbMask.charCodeAt(i);
+    }
+
+    DB = String.fromCharCode.apply(String, DB);
+
+    if (DB.substr(0, SHA1_SIZE) !== rstr_sha1('')) {
+      alert("Hash mismatch");
+    }
+
+    DB = DB.substr(SHA1_SIZE);
+
+    var first_one = DB.indexOf('\x01'),
+        last_zero = (first_one != -1) ? DB.substr(0, first_one).lastIndexOf('\x00') : -1;
+
+    if (last_zero + 1 != first_one) {
+        alert("Malformed data");
+    }
+
+    return DB.substr(first_one + 1);
+}
+
+
 // Set the private key fields N, e, and d from hex strings
 function RSASetPrivate(N,E,D) {
   if(N != null && E != null && N.length > 0 && E.length > 0) {
@@ -1496,7 +1626,7 @@ function RSASetPrivate(N,E,D) {
     this.d = parseBigInt(D,16);
   }
   else
-    console.error("Invalid RSA private key");
+    alert("Invalid RSA private key");
 }
 
 // Set the private key fields N, e, d and CRT params from hex strings
@@ -1512,7 +1642,7 @@ function RSASetPrivateEx(N,E,D,P,Q,DP,DQ,C) {
     this.coeff = parseBigInt(C,16);
   }
   else
-    console.error("Invalid RSA private key");
+    alert("Invalid RSA private key");
 }
 
 // Generate a new random private key B bits long, using public expt E
@@ -1565,11 +1695,14 @@ function RSADoPrivate(x) {
 
 // Return the PKCS#1 RSA decryption of "ctext".
 // "ctext" is an even-length hex string and the output is a plain string.
-function RSADecrypt(ctext) {
+function RSADecrypt(ctext, unpadFunction) {
+  if (typeof unpadFunction === typeof undefined) {
+    unpadFunction = pkcs1unpad2;
+  }
   var c = parseBigInt(ctext, 16);
   var m = this.doPrivate(c);
   if(m == null) return null;
-  return pkcs1unpad2(m, (this.n.bitLength()+7)>>3);
+  return unpadFunction(m, (this.n.bitLength()+7)>>3);
 }
 
 // Return the PKCS#1 RSA decryption of "ctext".
@@ -1588,6 +1721,7 @@ RSAKey.prototype.setPrivateEx = RSASetPrivateEx;
 RSAKey.prototype.generate = RSAGenerate;
 RSAKey.prototype.decrypt = RSADecrypt;
 //RSAKey.prototype.b64_decrypt = RSAB64Decrypt;
+
 
 // Copyright (c) 2011  Kevin M Burns Jr.
 // All Rights Reserved.
