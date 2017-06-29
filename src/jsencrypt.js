@@ -423,10 +423,13 @@ JSEncrypt.prototype.decrypt = function (string) {
  * @return {string} the encrypted string encoded in base64
  * @public
  */
-JSEncrypt.prototype.encrypt = function (string) {
+JSEncrypt.prototype.encrypt = function (string, use_oaep) {
   // Return the encrypted string.
   try {
-    return hex2b64(this.getKey().encrypt(string));
+    if (use_oaep) {
+        return hex2b64(this.getKey().encrypt(string, oaep_pad));
+    }
+        return hex2b64(this.getKey().encrypt(string));
   }
   catch (ex) {
     return false;

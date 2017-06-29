@@ -15,6 +15,7 @@ var files = [
   'lib/jsbn/rsa2.js',
   'lib/jsbn/rsa-async.js',
   'lib/jsbn/base64.js',
+  'lib/jsbn/sha1.js',
   'lib/jsrsasign/asn1-1.0.js',
   'lib/asn1js/hex.js',
   'lib/asn1js/base64.js',
