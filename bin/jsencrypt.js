@@ -4724,7 +4724,7 @@ JSEncrypt.prototype.setPublicKey = function (pubkey) {
 JSEncrypt.prototype.decrypt = function (string) {
   // Return the decrypted string.
   try {
-    return this.getKey().decrypt(b64tohex(string));
+    return this.getKey().decrypt(string);
   }
   catch (ex) {
     return false;
@@ -4743,9 +4743,9 @@ JSEncrypt.prototype.encrypt = function (string, use_oaep) {
   // Return the encrypted string.
   try {
     if (use_oaep) {
-        return hex2b64(this.getKey().encrypt(string, oaep_pad));
+        return this.getKey().encrypt(string, oaep_pad);
     }
-        return hex2b64(this.getKey().encrypt(string));
+        return this.getKey().encrypt(string);
   }
   catch (ex) {
     return false;
